@@ -56,20 +56,20 @@ def stop_existing_containers():
     ])
 
 def start_supabase():
-    """Start the Supabase services (using its compose file)."""
-    print("Starting Supabase services...")
-    run_command([
-        "docker", "compose", "-p", "localai", "-f", "supabase/docker/docker-compose.yml", "up", "-d"
-    ])
-
+ """Start the Supabase services (using its compose file)."""
+ print("Starting Supabase services...")
+ run_command([
+ "docker", "compose", "-p", "localai", "-f", "supabase/docker/docker-compose.yml", "up", "-d"
+ ])
+ 
 def start_local_ai(profile=None):
-    """Start the local AI services (using its compose file)."""
-    print("Starting local AI services...")
-    cmd = ["docker", "compose", "-p", "localai"]
-    if profile and profile != "none":
-        cmd.extend(["--profile", profile])
-    cmd.extend(["-f", "docker-compose.yml", "up", "-d"])
-    run_command(cmd)
+ """Start the local AI services (using its compose file)."""
+ print("Starting local AI services...")
+ cmd = ["docker", "compose", "-p", "localai"]
+ if profile and profile != "none":
+     cmd.extend(["--profile", profile])
+ cmd.extend(["-f", "docker-compose.yml", "up", "-d"])
+ run_command(cmd)
 
 def main():
     parser = argparse.ArgumentParser(description='Start the local AI and Supabase services.')

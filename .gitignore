@@ -3,3 +3,7 @@
 volumes/
 shared/
 supabase/
+
+# windsurf rules
+.windsurfrules
+

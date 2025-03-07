@@ -4,6 +4,7 @@ volumes:
   qdrant_storage:
   open-webui:
   flowise:
+  postgres_data:
 
 x-n8n: &service-n8n
   image: n8nio/n8n:latest
@@ -63,15 +64,35 @@ services:
     volumes:
       - open-webui:/app/backend/data
 
+  postgres:
+    image: postgres:13
+    container_name: n8n-postgres
+    environment:
+      - POSTGRES_DB=postgres
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-changeme}
+      - POSTGRES_USER=postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
   n8n-import:
     <<: *service-n8n
     container_name: n8n-import
     entrypoint: /bin/sh
     command:
       - "-c"
-      - "n8n import:credentials --separate --input=/backup/credentials && n8n import:workflow --separate --input=/backup/workflows"
+      - "n8n import:credentials --separate --input=/backup/credentials || true; n8n import:workflow --separate --input=/backup/workflows || true"
     volumes:
-      - ./n8n/backup:/backup  
+      - ./n8n/backup:/backup
+    environment:
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_HOST=postgres
+      - DB_POSTGRESDB_USER=postgres
+      - DB_POSTGRESDB_PASSWORD=${POSTGRES_PASSWORD:-changeme}
+      - DB_POSTGRESDB_DATABASE=postgres
+      - N8N_SKIP_DB_BOOTSTRAP=true
+    depends_on:
+      - postgres
 
   n8n:
     <<: *service-n8n
@@ -83,9 +104,16 @@ services:
       - n8n_storage:/home/node/.n8n
       - ./n8n/backup:/backup
       - ./shared:/data/shared
+    environment:
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_HOST=postgres
+      - DB_POSTGRESDB_USER=postgres
+      - DB_POSTGRESDB_PASSWORD=${POSTGRES_PASSWORD:-changeme}
+      - DB_POSTGRESDB_DATABASE=postgres
+      - N8N_SKIP_DB_BOOTSTRAP=true
     depends_on:
-      n8n-import:
-        condition: service_completed_successfully
+      - postgres
+      - n8n-import
 
   qdrant:
     image: qdrant/qdrant
