@@ -8,30 +8,18 @@ so they appear together in Docker Desktop.
 """
 
 import os
-import subprocess
-import shutil
+import sys
 import time
+import json
+import shutil
 import argparse
+import subprocess
 import platform
-import sys
-import sys
 
-def run_command(cmd, cwd=None, ignore_errors=False):
+def run_command(cmd, cwd=None):
     """Run a shell command and print it."""
     print("Running:", " ".join(cmd))
-    try:
-        result = subprocess.run(cmd, cwd=cwd, check=not ignore_errors, text=True, capture_output=True)
-        print(result.stdout)
-        if result.stderr:
-            print(result.stderr)
-        return True if result.returncode == 0 else False
-    except subprocess.CalledProcessError as e:
-        print(f"Command failed with error: {e}")
-        if e.stdout:
-            print(e.stdout)
-        if e.stderr:
-            print(e.stderr)
-        return False
+    subprocess.run(cmd, cwd=cwd, check=True)
 
 def clone_supabase_repo():
     """Clone the Supabase repository using sparse checkout if not already present."""
@@ -59,57 +47,40 @@ def prepare_supabase_env():
     print("Copying .env in root to .env in supabase/docker...")
     shutil.copyfile(env_example_path, env_path)
 
-def clean_docker_environment():
-    """Clean up Docker environment to ensure a fresh start."""
-    print("Cleaning Docker environment...")
-    
-    # Stop any running containers with the project name
-    print("Stopping any running localai containers...")
+def stop_existing_containers():
+    """Stop and remove existing containers for our unified project ('localai')."""
+    print("Stopping and removing existing containers for the unified project 'localai'...")
     run_command([
         "docker", "compose",
         "-p", "localai",
         "-f", "docker-compose.yml",
-        "down"
-    ], ignore_errors=True)
-    
-    run_command([
-        "docker", "compose",
-        "-p", "localai",
         "-f", "supabase/docker/docker-compose.yml",
         "down"
-    ], ignore_errors=True)
-    
-    # Prune networks to remove any dangling networks
-    print("Pruning Docker networks...")
-    run_command(["docker", "network", "prune", "-f"], ignore_errors=True)
-    
-    # Check for any orphaned containers and remove them
-    print("Checking for orphaned containers...")
-    containers = subprocess.run(
-        ["docker", "ps", "-a", "--filter", "name=localai", "--format", "{{.Names}}"],
-        capture_output=True, text=True
-    ).stdout.strip().split('\n')
-    
-    for container in containers:
-        if container and "localai" in container:
-            print(f"Removing orphaned container: {container}")
-            run_command(["docker", "rm", "-f", container], ignore_errors=True)
+    ])
 
 def start_supabase():
-       """Start the Supabase services (using its compose file)."""
-       print("Starting Supabase services...")
-       return run_command([
-               "docker", "compose", "-p", "localai", "-f", "supabase/docker/docker-compose.yml", "up", "-d"
-       ])
+    """Start the Supabase services (using its compose file)."""
+    print("Starting Supabase services...")
+    
+    # Start all Supabase services at once
+    try:
+        subprocess.run(
+            ["docker", "compose", "-p", "localai", "-f", "supabase/docker/docker-compose.yml", "up", "-d", "--remove-orphans"],
+            check=True
+        )
+        print("All Supabase services started successfully!")
+    except subprocess.CalledProcessError as e:
+        print(f"Error starting Supabase services: {e}")
+        print("Attempting to continue despite errors...")
 
 def start_local_ai(profile=None):
-       """Start the local AI services (using its compose file)."""
-       print("Starting local AI services...")
-       cmd = ["docker", "compose", "-p", "localai"]
-       if profile and profile != "none":
-           cmd.extend(["--profile", profile])
-       cmd.extend(["-f", "docker-compose.yml", "up", "-d"])
-       return run_command(cmd)
+    """Start the local AI services (using its compose file)."""
+    print("Starting local AI services...")
+    cmd = ["docker", "compose", "-p", "localai"]
+    if profile and profile != "none":
+        cmd.extend(["--profile", profile])
+    cmd.extend(["-f", "docker-compose.yml", "up", "-d"])
+    run_command(cmd)
 
 def generate_searxng_secret_key():
     """Generate a secret key for SearXNG based on the current platform."""
@@ -257,7 +228,6 @@ def main():
                       help='Profile to use for Docker Compose (default: cpu)')
     args = parser.parse_args()
 
-    # Initial setup
     clone_supabase_repo()
     prepare_supabase_env()
     
@@ -265,34 +235,17 @@ def main():
     generate_searxng_secret_key()
     check_and_fix_docker_compose_for_searxng()
     
-    
-    # Clean Docker environment
-    clean_docker_environment()
+    stop_existing_containers()
     
     # Start Supabase first
-    print("Starting Supabase services...")
-    if start_supabase():
-        # Give Supabase some time to initialize
-        print("Waiting for Supabase to initialize...")
-        time.sleep(15)  # Increased wait time
-        
-        # Then start the local AI services
-        print("Starting local AI services...")
-        if not start_local_ai(args.profile):
-            print("Failed to start local AI services. Attempting recovery...")
-            # Recovery attempt: more aggressive cleanup and retry
-            clean_docker_environment()
-            time.sleep(5)
-            if not start_local_ai(args.profile):
-                print("ERROR: Failed to start local AI services after recovery attempt.")
-                print("Please check Docker logs and ensure no conflicting services are running.")
-                sys.exit(1)
-    else:
-        print("ERROR: Failed to start Supabase services.")
-        print("Please check Docker and try again.")
-        sys.exit(1)
+    start_supabase()
     
-    print("All services started successfully!")
+    # Give Supabase some time to initialize
+    print("Waiting for Supabase to initialize...")
+    time.sleep(10)
+    
+    # Then start the local AI services
+    start_local_ai(args.profile)
 
 if __name__ == "__main__":
     main()
